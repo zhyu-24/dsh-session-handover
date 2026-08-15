@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.2] - 2026-08-16
+
+Fix duplicated candidate list: the analyze model occasionally emitted the JSON array twice, so every candidate (including 综合继续) appeared twice in the panel.
+
+### Changed
+
+- `analyze` output now passes through the same generic repeated-prefix dedup used by finalize.
+- `parseCandidates` dedups by label across all of its parsing paths.
+
 ## [1.3.1] - 2026-08-16
 
 Fix finalize derailment: the model replied conversationally (repeating the rules and asking for the transcript) instead of generating the handover doc, and the reply was written to disk verbatim.

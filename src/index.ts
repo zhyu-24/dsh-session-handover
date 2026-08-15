@@ -190,6 +190,16 @@ async function runModel(ctx: any, system: string, user: string, maxTokens: numbe
   return out
 }
 
+/** 按 label 去重（模型偶发把候选列表输出两遍）。 */
+function uniqCandidates(list: Array<{ label: string; description: string }>): Array<{ label: string; description: string }> {
+  const seen = new Set<string>()
+  return list.filter((c) => {
+    if (seen.has(c.label)) return false
+    seen.add(c.label)
+    return true
+  })
+}
+
 function parseCandidates(raw: string): Array<{ label: string; description: string }> {
   const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/)
   const body = fence ? fence[1] : raw
@@ -201,7 +211,7 @@ function parseCandidates(raw: string): Array<{ label: string; description: strin
         label: String((c && (c.label || c.name)) || '').slice(0, 20),
         description: String((c && (c.description || c.desc)) || ''),
       })).filter((c: any) => c.label)
-      if (list.length) return list
+      if (list.length) return uniqCandidates(list)
     }
   } catch {}
   const re = /\{\s*"label"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"description"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/g
@@ -210,11 +220,11 @@ function parseCandidates(raw: string): Array<{ label: string; description: strin
   while ((m = re.exec(body)) !== null) {
     out.push({ label: m[1].slice(0, 20), description: m[2] })
   }
-  if (out.length) return out
+  if (out.length) return uniqCandidates(out)
   const lines = raw.split('\n')
     .map((s) => s.replace(/^\s*[-*\d.、]+\s*/, '').trim())
     .filter(Boolean).slice(0, 5)
-  return lines.map((l) => ({ label: l.slice(0, 20), description: '' }))
+  return uniqCandidates(lines.map((l) => ({ label: l.slice(0, 20), description: '' })))
 }
 
 function slugOf(text: string): string {
@@ -277,7 +287,7 @@ function looksLikeDoc(md: string): boolean {
 }
 
 /** 通用去重：先按第二个「# 交接」标题截断，再按重复前缀截断（防整段输出两遍且无标题）。 */
-function dedupDoc(md: string): string {
+function dedupText(md: string): string {
   let text = singleCopy(md).trim()
   if (text.length >= 120) {
     const head = text.slice(0, 100).trim()
@@ -378,7 +388,7 @@ export function apply(ctx: any, config?: any): void {
           const t = await transcriptOf(ctx, sessionId)
           const raw = await runModel(ctx, ANALYZE_SYSTEM, '## 会话内容\n' + (t.text || '（会话内容为空）'), 2000)
           writeJson(res, 200, {
-            candidates: parseCandidates(raw),
+            candidates: parseCandidates(dedupText(raw)),
             parentSessionId: sessionId,
             parentTitle: t.title,
             parentCwd: (t.header && t.header.cwd) || '',
@@ -442,7 +452,7 @@ export function apply(ctx: any, config?: any): void {
             attempts++
             const raw = await runModel(ctx, system, user, 12000, 0.2)
             const parsed = parseFinalize(raw)
-            const cand = dedupDoc(parsed.md)
+            const cand = dedupText(parsed.md)
             if (cand && looksLikeDoc(cand)) {
               md = cand
               parsedSlug = parsed.slug
