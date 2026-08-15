@@ -163,13 +163,15 @@ export function apply(ctx: any): void {
     const setCustom = (ev: any) => { s.custom = ev.target.value; s.emit() }
     const close = () => { s.open = false; s.emit() }
     const confirm = () => {
-      const chosen = s.candidates.filter((c: any) => s.checked[c.label]).map((c: any) => c.label)
+      const picked = s.candidates.filter((c: any) => s.checked[c.label])
+      const chosen = picked.map((c: any) => c.label)
+      const scope = picked.map((c: any) => String(c.description || '').trim()).filter(Boolean).join('；')
       const custom = String(s.custom || '').trim()
       if (!chosen.length && !custom) { s.error = '请勾选至少一个目标，或输入自定义目标'; s.emit(); return }
       s.phase = 'writing'
       s.error = null
       s.emit()
-      apiCall('finalize', { sessionId: s.sessionId, chosen, custom }).then((res) => {
+      apiCall('finalize', { sessionId: s.sessionId, chosen, custom, scope }).then((res) => {
         const prefill = (res && res.prefill) || ''
         // 新会话工作目录与父会话对齐：优先选择 path 与父会话 cwd 一致的工作区。
         let targetWs = s.workspaceId

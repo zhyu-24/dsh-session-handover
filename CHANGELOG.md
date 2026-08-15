@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.1.0] - 2026-08-15
+
+Goal-scoped relevance filtering for the finalize step: the handover doc now respects the picked goal, the candidates' scope descriptions, and the user's custom instructions instead of summarizing the whole transcript generically.
+
+### Changed
+
+- `finalize` now tokenizes the goal + scope + custom text and excerpts the transcript to relevant blocks before calling the model (head/tail fallback when nothing matches or the goal is generic, e.g. 综合继续).
+- The finalize prompt now carries the candidates' scope descriptions (previously only their labels were sent) and enforces goal-scoped filtering: irrelevant topics and user-excluded content are dropped; the doc summarizes status/decisions/pitfalls/next steps instead of narrating chronologically; unrelated excerpts must not be force-fitted.
+- Client sends the checked candidates' descriptions as `scope`.
+- Finalize response gains a `filtered` diagnostics block (seed token count, feed/full char counts, excerpted flag).
+
+### Added
+
+- `src/text.ts`: `keywordTokens` / `excerptFor` helpers — ASCII words + CJK bigrams with stopword filtering, window-expanded block scoring, 16k budget, and a minimum-size guard against false hits.
+
 ## [1.0.0] - 2026-08-15
 
 First public release, hardened from the `handov-1` dynamic Cordis plugin prototype (pkg-1…pkg-12) into a standalone profile-bundle package.

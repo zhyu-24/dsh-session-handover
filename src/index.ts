@@ -15,6 +15,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { excerptFor, keywordTokens } from './text'
 
 export const name = 'session-handover'
 
@@ -243,12 +244,19 @@ const ANALYZE_PROMPT_HEAD = [
   '## 会话内容',
 ].join('\n')
 
-function finalizePromptHead(goal: string, custom: string): string {
+function finalizePromptHead(goal: string, custom: string, scope: string): string {
   return [
     '你是会话交接助手。请根据下面的会话内容写一份交接文档（Markdown），供一个新的空白会话快速恢复工作状态。',
     '',
     '新会话目标：' + goal,
+    '范围说明：' + (scope || '无（仅按目标判断）'),
     '补充说明：' + (custom || '无'),
+    '',
+    '筛选要求（必须遵守）：',
+    '- 文档只写与新会话目标直接相关的内容；无关议题、与目标无关的已完成细节一律不写；',
+    '- 范围说明与补充说明是用户的明确要求：其中说到的内容要覆盖，明确排除的内容绝对不写；',
+    '- 优先总结目标需要知道的状态、决策、坑与下一步，不要按时间顺序流水账复述；',
+    '- 下面的会话内容已经按目标做过相关性摘录，但可能仍有无关片段，请进一步甄别取舍；若摘录中没有相关内容，如实写明（标【待确认】），不要从无关内容里硬凑。',
     '',
     '文档结构（只写有内容的节，宁缺毋滥）：',
     '# 交接：<目标一句话>',
@@ -259,7 +267,7 @@ function finalizePromptHead(goal: string, custom: string): string {
     '## 注意事项',
     '## 建议的第一步',
     '',
-    '要求：信息只来自会话内容，不确定的标【待确认】，绝不编造；精炼优先，全文 600 字以内；不要写「父会话」行（系统会自动加）。',
+    '要求：信息只来自会话内容，不确定的标【待确认】，绝不编造；精炼优先，全文 600 字以内（目标范围窄时可更短）；不要写「父会话」行（系统会自动加）。',
     '',
     '## 会话内容',
   ].join('\n')
@@ -313,8 +321,9 @@ export function apply(ctx: any, config?: any): void {
           }
           const args = await readJsonBody(req)
           const sessionId = args && args.sessionId
-          const chosen: string[] = (args && args.chosen) || []
+          const chosen: any[] = (args && args.chosen) || []
           const custom = String((args && args.custom) || '').trim()
+          const scope = String((args && args.scope) || '').trim()
           if (!sessionId) {
             writeJson(res, 400, { error: '缺少会话 id' })
             return
@@ -324,15 +333,28 @@ export function apply(ctx: any, config?: any): void {
             return
           }
           const t = await transcriptOf(ctx, sessionId)
-          const goal = chosen.length ? chosen.join('、') : custom
-          const rawMd = await runModel(ctx, finalizePromptHead(goal, custom) + '\n' + (t.text || '（会话内容为空）'), 6000)
+          const labels = chosen
+            .map((c: any) => (typeof c === 'string' ? c : (c && c.label) || ''))
+            .filter(Boolean)
+          const chosenScope = chosen
+            .filter((c: any) => typeof c === 'object' && c && c.description)
+            .map((c: any) => String(c.description).trim())
+            .filter(Boolean)
+            .join('；')
+          const scopeText = scope || chosenScope
+          const goal = labels.length ? labels.join('、') : custom
+          const seed = [goal, scopeText, custom].filter(Boolean).join(' ')
+          // 按目标/范围/补充说明做相关性摘录；无关键词或零命中则回退整段转录。
+          let feed = excerptFor(t.text, seed)
+          if (!feed) feed = t.text
+          const rawMd = await runModel(ctx, finalizePromptHead(goal, custom, scopeText) + '\n' + (feed || '（会话内容为空）'), 6000)
           const md = singleCopy(rawMd)
           if (!md) {
             writeJson(res, 500, { error: '模型未生成交接文档内容' })
             return
           }
           const deduped = md.length < String(rawMd || '').trim().length
-          const slug = slugOf(chosen[0] || custom)
+          const slug = slugOf(labels[0] || custom)
           const cwd = t.header && t.header.cwd
           if (!cwd) {
             writeJson(res, 500, { error: '无法确定会话工作目录' })
@@ -381,6 +403,12 @@ export function apply(ctx: any, config?: any): void {
             deduped,
             existed,
             chars: md.length,
+            filtered: {
+              seedTokens: keywordTokens(seed).length,
+              feedChars: feed.length,
+              fullChars: t.text.length,
+              excerpted: feed !== t.text,
+            },
           })
         } catch (error: any) {
           writeJson(res, 500, { error: String((error && error.message) || error) })
