@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.3] - 2026-08-16
+
+Salvage more model outputs in finalize and record diagnostics when both attempts fail the quality check.
+
+### Changed
+
+- `parseFinalize` gained two extra fallbacks: a regex extraction of the `"md"` field with JSON-unescaping (for syntactically invalid JSON, e.g. raw newlines in the value), and a cut from the first `# 交接` heading to the end.
+- The finalize retry uses a higher temperature (0.6) on the second attempt to break out of derailment patterns.
+- The system prompt now also forbids imitating the assistant messages found in the transcript.
+
+### Added
+
+- When both attempts fail, finalize writes `dsh-handover-finalize-debug.json` (timestamp, goal, feed stats, per-attempt raw length + head) into the session workspace and mentions it in the error message.
+
 ## [1.3.2] - 2026-08-16
 
 Fix duplicated candidate list: the analyze model occasionally emitted the JSON array twice, so every candidate (including 综合继续) appeared twice in the panel.
