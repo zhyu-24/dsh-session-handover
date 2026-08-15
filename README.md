@@ -1,5 +1,7 @@
 # dsh-session-handover
 
+English · [中文](./README.zh-CN.md)
+
 Long-session handover plugin for the **dsh** Web GUI: derive a lightweight new session without losing the old one.
 
 Instead of compressing context in place, it analyzes the current session, predicts a few "new-session goals" for you to pick, writes an editable `HANDOVER-*.md` doc into the session workspace, and jumps to a new blank session whose input box is prefilled with the opening line (including the parent session id, so the new session can always look back).
