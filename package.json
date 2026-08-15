@@ -1,0 +1,55 @@
+{
+  "name": "@dsh-external/dsh-session-handover",
+  "description": "Session handover for the dsh web GUI: a header Derive button that predicts continuation-goal candidates from the current session, writes an editable HANDOVER doc into the session workspace, and jumps to a new blank session with a prefilled opening line carrying the parent session id.",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "author": "Yu ZiHan <266621481+zhyu-24@users.noreply.github.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhyu-24/dsh-session-handover.git"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "plugin",
+    "session",
+    "handover"
+  ],
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "tsdown"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "lightningcss": "^1.32.0",
+    "tsdown": "0.22.14"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "cordis.patch.yml",
+    "src",
+    "skill",
+    "README.md",
+    "CHANGELOG.md"
+  ]
+}

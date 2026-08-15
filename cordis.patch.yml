@@ -1,0 +1,14 @@
+# dsh-session-handover bundle patch: inserts the dual-face plugin row into the
+# web profile roster. Applied as a profile bundle layer (the `dsh.bundle.patch`
+# manifest field) over dsh-base; activate with
+# `dsh plugin --profile web add link:D:/text_zip/dsh-session-handover`.
+#
+# The row is a bare plugin by package name: the node half (exports ".") runs in
+# the host process (handover analyze/finalize API routes + parent_session_peek
+# agent tool), and the `dsh.client` declaration in package.json makes the
+# browser half (exports "./client", served at /plugins/<id>/client.js) load in
+# the web GUI (Derive header button, candidate panel, new-session jump and
+# opening-line prefill).
+- insert:
+    - id: session-handover
+      name: '@dsh-external/dsh-session-handover'
