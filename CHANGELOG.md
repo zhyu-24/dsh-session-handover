@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.0] - 2026-08-16
+
+Show the generated handover doc in the derive panel before jumping.
+
+### Changed
+
+- `finalize` response now returns the full `md` content alongside `docPath`.
+- The derive panel no longer jumps straight to the new session after finalize; it enters a "done" state that renders the doc content inline (scrollable preview) with 「复制全文」 / 「关闭」 / 「前往新会话」 buttons.
+
 ## [1.2.0] - 2026-08-16
 
 Richer handover docs and semantic filenames for custom goals.

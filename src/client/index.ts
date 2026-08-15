@@ -39,7 +39,7 @@ export function apply(ctx: any): void {
   const store = {
     open: false, phase: 'idle', error: null, notice: '',
     sessionId: null, workspaceId: null, wsItems: [], parentTitle: '', chars: 0,
-    candidates: [], checked: {}, custom: '',
+    candidates: [], checked: {}, custom: '', doc: null,
     listeners: new Set(),
     emit() { for (const l of Array.from(this.listeners)) l() },
   }
@@ -172,43 +172,73 @@ export function apply(ctx: any): void {
       s.error = null
       s.emit()
       apiCall('finalize', { sessionId: s.sessionId, chosen, custom, scope }).then((res) => {
-        const prefill = (res && res.prefill) || ''
-        // 新会话工作目录与父会话对齐：优先选择 path 与父会话 cwd 一致的工作区。
-        let targetWs = s.workspaceId
-        const parentCwd = (res && res.parentCwd) || ''
-        if (parentCwd && s.wsItems && s.wsItems.length) {
-          const hit = s.wsItems.find((w: any) => String(w.path || '').toLowerCase() === parentCwd.toLowerCase())
-          if (hit) targetWs = hit.workspaceId
+        s.doc = {
+          filename: (res && res.docPath) || '',
+          md: (res && res.md) || '',
+          prefill: (res && res.prefill) || '',
+          parentCwd: (res && res.parentCwd) || '',
         }
-        if (targetWs) {
-          workspaces.connectWorkspace(targetWs).then((newId: string) => {
-            pendingPrefill = { sessionId: newId, text: prefill }
-            s.open = false
-            s.phase = 'idle'
-            s.emit()
-            sessions.open(newId)
-          }, (err: any) => {
-            s.phase = 'error'
-            s.error = '新会话创建失败：' + String((err && err.message) || err)
-            s.emit()
-          })
-        } else {
-          pendingPrefill = { sessionId: null, text: prefill }
-          s.open = false
-          s.phase = 'idle'
-          s.emit()
-          workspaces.startSession()
-        }
+        s.phase = 'done'
+        s.emit()
       }, (err: any) => {
         s.phase = 'error'
         s.error = String((err && err.message) || err)
         s.emit()
       })
     }
+
+    const goNext = () => {
+      const d = s.doc || {}
+      // 新会话工作目录与父会话对齐：优先选择 path 与父会话 cwd 一致的工作区。
+      let targetWs = s.workspaceId
+      const parentCwd = d.parentCwd || ''
+      if (parentCwd && s.wsItems && s.wsItems.length) {
+        const hit = s.wsItems.find((w: any) => String(w.path || '').toLowerCase() === parentCwd.toLowerCase())
+        if (hit) targetWs = hit.workspaceId
+      }
+      const closePanel = () => { s.open = false; s.phase = 'idle'; s.emit() }
+      if (targetWs) {
+        workspaces.connectWorkspace(targetWs).then((newId: string) => {
+          pendingPrefill = { sessionId: newId, text: d.prefill || '' }
+          closePanel()
+          sessions.open(newId)
+        }, (err: any) => {
+          s.phase = 'error'
+          s.error = '新会话创建失败：' + String((err && err.message) || err)
+          s.emit()
+        })
+      } else {
+        pendingPrefill = { sessionId: null, text: d.prefill || '' }
+        closePanel()
+        workspaces.startSession()
+      }
+    }
+
+    const copyDoc = () => {
+      const text = (s.doc && s.doc.md) || ''
+      const done = () => { s.notice = '已复制全文到剪贴板'; s.emit() }
+      const fail = () => { s.notice = '复制失败，请手动选择复制'; s.emit() }
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, fail)
+        return
+      }
+      try {
+        const ta = document.createElement('textarea')
+        ta.value = text
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+        done()
+      } catch { fail() }
+    }
     const phaseText: Record<string, string> = {
       analyzing: '正在分析会话，预测新会话目标…',
       picking: s.parentTitle ? '父会话：' + s.parentTitle : '选择新会话目标',
       writing: '正在生成交接文档…',
+      done: '交接文档已生成',
       error: '出错了',
     }
     const children = [
@@ -243,6 +273,21 @@ export function apply(ctx: any): void {
         },
       }))
     }
+    if (s.phase === 'done') {
+      const d = s.doc || {}
+      children.push(React.createElement('div', { key: 'done-title', style: { fontWeight: 600, marginBottom: 4 } },
+        '交接文档已生成：' + (d.filename || '')))
+      if (d.md) {
+        children.push(React.createElement('pre', {
+          key: 'done-md',
+          style: {
+            maxHeight: '44vh', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+            margin: '8px 0', padding: 10, border: '1px solid ' + colors.border, borderRadius: 8,
+            background: colors.bg, color: colors.fg, fontSize: 12, lineHeight: '18px',
+          },
+        }, d.md))
+      }
+    }
     if (s.notice) {
       children.push(React.createElement('div', { key: 'notice', style: { color: '#d9a441', marginBottom: 8 } }, s.notice))
     }
@@ -267,6 +312,22 @@ export function apply(ctx: any): void {
           onClick: close,
           style: { padding: '4px 12px', borderRadius: 6, cursor: 'pointer', border: '1px solid ' + colors.border, background: 'transparent', color: colors.fg },
         }, '关闭'),
+      ))
+    }
+    if (s.phase === 'done') {
+      children.push(React.createElement('div', { key: 'done-actions', style: { display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' } },
+        React.createElement('button', {
+          onClick: copyDoc,
+          style: { padding: '4px 12px', borderRadius: 6, cursor: 'pointer', border: '1px solid ' + colors.border, background: 'transparent', color: colors.fg },
+        }, '复制全文'),
+        React.createElement('button', {
+          onClick: close,
+          style: { padding: '4px 12px', borderRadius: 6, cursor: 'pointer', border: '1px solid ' + colors.border, background: 'transparent', color: colors.fg },
+        }, '关闭'),
+        React.createElement('button', {
+          onClick: goNext,
+          style: { padding: '4px 12px', borderRadius: 6, cursor: 'pointer', border: 'none', background: colors.accent, color: '#fff' },
+        }, '前往新会话'),
       ))
     }
     return React.createElement('div', {

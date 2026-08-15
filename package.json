@@ -1,7 +1,7 @@
 {
   "name": "@dsh-external/dsh-session-handover",
   "description": "Session handover for the dsh web GUI: a header Derive button that predicts continuation-goal candidates from the current session, writes an editable HANDOVER doc into the session workspace, and jumps to a new blank session with a prefilled opening line carrying the parent session id.",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "type": "module",
   "main": "lib/index.js",
   "author": "Yu ZiHan <266621481+zhyu-24@users.noreply.github.com>",
