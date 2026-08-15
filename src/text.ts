@@ -47,7 +47,13 @@ export function keywordTokens(seed: string): string[] {
     }
     for (let i = 0; i + 1 < s.length; i++) {
       const b = s.slice(i, i + 2)
-      if (!STOPWORDS.has(b)) tokens.push(b)
+      if (STOPWORDS.has(b)) continue
+      // 跳过跨界噪声 bigram：首字符是前一个停用词的尾字符（如「加上部署」的「上部」），
+      // 或尾字符是后一个停用词的首字符（如「部署综合」的「署综」）。
+      const left = i > 0 ? s.slice(i - 1, i + 1) : ''
+      const right = i + 2 < s.length ? s.slice(i + 1, i + 3) : ''
+      if ((left && STOPWORDS.has(left)) || (right && STOPWORDS.has(right))) continue
+      tokens.push(b)
     }
   }
   return Array.from(new Set(tokens))

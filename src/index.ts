@@ -134,8 +134,8 @@ async function transcriptOf(ctx: any, sessionId: string): Promise<{ text: string
   const surface = await sessionQuery.readSurface(sessionId)
   const parts = ((surface && surface.events) || []).map(eventText).filter(Boolean)
   let text = parts.join('\n')
-  if (text.length > 60000) {
-    text = text.slice(0, 40000) + '\n……[中间省略]……\n' + text.slice(-20000)
+  if (text.length > 120000) {
+    text = text.slice(0, 80000) + '\n……[中间省略]……\n' + text.slice(-40000)
   }
   let title = ''
   try {
@@ -232,6 +232,30 @@ function singleCopy(md: string): string {
   return text.slice(0, second).trim()
 }
 
+/** Parse the model's finalize output: prefer a JSON {slug, md}; otherwise treat the whole text as md. */
+function parseFinalize(raw: string): { slug: string; md: string } {
+  const text = String(raw || '').trim()
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+  const body = (fence ? fence[1] : text).trim()
+  try {
+    const parsed = JSON.parse(body)
+    if (parsed && typeof parsed === 'object') {
+      const slug = String((parsed.slug || parsed.title || parsed.name) || '').trim()
+      const md = String((parsed.md || parsed.markdown || parsed.content || parsed.body) || '').trim()
+      if (md || slug) return { slug, md }
+    }
+  } catch {}
+  return { slug: '', md: text }
+}
+
+/** 把模型总结的文件名清洗成安全 slug（保留中文/字母/数字/连字符）。 */
+function sanitizeSlug(text: string): string {
+  const base = String(text || '').trim()
+  if (!base) return ''
+  const cleaned = base.replace(/[\\/:*?"<>|\s]+/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '')
+  return cleaned.slice(0, 40) || ''
+}
+
 const ANALYZE_PROMPT_HEAD = [
   '你是会话交接助手。请阅读下面的会话内容，盘点议题/任务线索，并预测 3~5 个「新会话目标」候选。',
   '要求：',
@@ -252,22 +276,27 @@ function finalizePromptHead(goal: string, custom: string, scope: string): string
     '范围说明：' + (scope || '无（仅按目标判断）'),
     '补充说明：' + (custom || '无'),
     '',
-    '筛选要求（必须遵守）：',
-    '- 文档只写与新会话目标直接相关的内容；无关议题、与目标无关的已完成细节一律不写；',
-    '- 范围说明与补充说明是用户的明确要求：其中说到的内容要覆盖，明确排除的内容绝对不写；',
-    '- 优先总结目标需要知道的状态、决策、坑与下一步，不要按时间顺序流水账复述；',
-    '- 下面的会话内容已经按目标做过相关性摘录，但可能仍有无关片段，请进一步甄别取舍；若摘录中没有相关内容，如实写明（标【待确认】），不要从无关内容里硬凑。',
+    '## 内容筛选规则（必须遵守）',
+    '- 区分两类内容，区别对待：',
+    '  1. 议题内容：按「新会话目标 + 范围说明」筛选，只写与之直接相关的议题；范围说明与补充说明是用户的明确要求，其中说到的要覆盖、明确排除的绝对不写；无关议题、与目标无关的已完成细节不写；',
+    '  2. 全局知识：关键决策、约定、环境信息、踩过的坑、待办事项——这些即使与目标不直接相关也要完整保留，因为新会话无论做什么方向都可能用到；不要为了简短而省略这类知识。',
+    '- 优先总结状态/决策/坑/下一步，不要按时间顺序流水账复述；',
+    '- 下面的会话内容已做过相关性摘录，但可能仍有无关片段，请进一步甄别取舍；若摘录中没有相关内容，如实写明（标【待确认】），不要从无关内容里硬凑。',
     '',
-    '文档结构（只写有内容的节，宁缺毋滥）：',
+    '## 输出格式（严格遵守：只输出一个 JSON 对象，不要任何其他文字或代码块标记）',
+    '{"slug": "<交接文档文件名，2~8 个字，语义化概括目标，例如「SSH-部署」「交接筛选」>", "md": "<交接文档 Markdown 全文>"}',
+    '',
+    '## 交接文档结构（写在 md 字段里，只写有内容的节，宁缺毋滥）',
     '# 交接：<目标一句话>',
     '## 背景与现状（按延续的议题分小节：目标 / 已完成 / 当前状态 / 下一步）',
     '## 关键决策与约定',
+    '## 未留档知识与关键信息（逐条列出只存在于本会话上下文、尚未单独写成文件的知识；宁全勿缺）',
     '## 相关文件与位置',
     '## 环境与常用命令',
     '## 注意事项',
     '## 建议的第一步',
     '',
-    '要求：信息只来自会话内容，不确定的标【待确认】，绝不编造；精炼优先，全文 600 字以内（目标范围窄时可更短）；不要写「父会话」行（系统会自动加）。',
+    '要求：信息只来自会话内容，不确定的标【待确认】，绝不编造；长度按需——把新会话需要的知识写全优先，但不写无关内容、不流水账；不要写「父会话」行（系统会自动加）。',
     '',
     '## 会话内容',
   ].join('\n')
@@ -345,16 +374,17 @@ export function apply(ctx: any, config?: any): void {
           const goal = labels.length ? labels.join('、') : custom
           const seed = [goal, scopeText, custom].filter(Boolean).join(' ')
           // 按目标/范围/补充说明做相关性摘录；无关键词或零命中则回退整段转录。
-          let feed = excerptFor(t.text, seed)
+          let feed = excerptFor(t.text, seed, 48000)
           if (!feed) feed = t.text
-          const rawMd = await runModel(ctx, finalizePromptHead(goal, custom, scopeText) + '\n' + (feed || '（会话内容为空）'), 6000)
-          const md = singleCopy(rawMd)
+          const raw = await runModel(ctx, finalizePromptHead(goal, custom, scopeText) + '\n' + (feed || '（会话内容为空）'), 12000)
+          const parsed = parseFinalize(raw)
+          const md = singleCopy(parsed.md)
           if (!md) {
             writeJson(res, 500, { error: '模型未生成交接文档内容' })
             return
           }
-          const deduped = md.length < String(rawMd || '').trim().length
-          const slug = slugOf(labels[0] || custom)
+          const deduped = md.length < parsed.md.length
+          const slug = sanitizeSlug(parsed.slug) || slugOf(labels[0] || custom)
           const cwd = t.header && t.header.cwd
           if (!cwd) {
             writeJson(res, 500, { error: '无法确定会话工作目录' })
@@ -404,6 +434,7 @@ export function apply(ctx: any, config?: any): void {
             existed,
             chars: md.length,
             filtered: {
+              slug,
               seedTokens: keywordTokens(seed).length,
               feedChars: feed.length,
               fullChars: t.text.length,

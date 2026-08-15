@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.0] - 2026-08-16
+
+Richer handover docs and semantic filenames for custom goals.
+
+### Changed
+
+- The finalize prompt now asks the model to output a JSON object `{"slug","md"}`: the `slug` becomes the file name (a 2–8 character semantic summary like 「SSH-部署」) instead of truncating the raw user text.
+- The finalize prompt distinguishes topic content (filtered by the picked goal/scope) from global knowledge (decisions, conventions, environment, pitfalls, TODOs), which is now kept even when not directly on-goal.
+- The doc template gains a 「未留档知识与关键信息」 section for knowledge that lives only in the session transcript and isn't persisted to any file.
+- Loosened budgets for fuller extraction: transcript truncation 60k → 120k chars, relevance excerpt 16k → 48k chars, model output max tokens 6k → 12k, and the doc length cap (600 chars) is dropped in favor of "write what's needed".
+
+### Fixed
+
+- `src/text.ts`: CJK bigram tokenizer no longer emits cross-boundary noise tokens (e.g. 「综合继续」→「合继」, 「加上部署」→「上部」).
+
 ## [1.1.0] - 2026-08-15
 
 Goal-scoped relevance filtering for the finalize step: the handover doc now respects the picked goal, the candidates' scope descriptions, and the user's custom instructions instead of summarizing the whole transcript generically.
