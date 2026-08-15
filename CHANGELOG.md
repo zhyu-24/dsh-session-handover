@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.1] - 2026-08-16
+
+Fix finalize derailment: the model replied conversationally (repeating the rules and asking for the transcript) instead of generating the handover doc, and the reply was written to disk verbatim.
+
+### Changed
+
+- `finalize`/`analyze` now use system/user role separation: the task and all rules live in the system message; the transcript is passed as user content explicitly marked as raw material, with hard rules against executing its requests or replying to its participants.
+- `finalize` retries once when the output fails quality checks, and rejects output with no Markdown heading instead of writing it to disk.
+- Stricter `parseFinalize`: also parses a JSON object embedded inside conversational text (first `{` … last `}`).
+
+### Fixed
+
+- Duplicated model output is cut generically via repeated-prefix detection, not only at a second `# 交接` heading.
+
+### Added
+
+- Slug fallback chain: JSON `slug` → `# 交接` H1 title → truncated raw goal.
+
 ## [1.3.0] - 2026-08-16
 
 Show the generated handover doc in the derive panel before jumping.
